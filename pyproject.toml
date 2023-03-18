@@ -7,15 +7,19 @@ readme = "README.md"
 packages = [{include = "battery_optimization"}]
 
 [tool.poetry.dependencies]
-python = ">3.8,<3.12"
+python = ">3.8,<3.11"
 numpy = "*"
-scipy = "^1.10.1"
+scipy = ">=1.3"
 pandas = "^1.5.3"
 matplotlib = "^3.7.1"
 scikit-learn = "^1.2.2"
 seaborn = "^0.12.2"
 jupyter = "^1.0.0"
 jupyterlab = "^3.6.1"
+pyarrow = "^11.0.0"
+statsmodels = "^0.13.5"
+darts = "^0.23.1"
+holidays = "^0.21.13"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.1.0"
