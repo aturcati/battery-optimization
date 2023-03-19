@@ -88,66 +88,7 @@ class DataHandler(object):
         # Add normalized price column
         df["normalized_price"] = (df["price"] - df["price"].mean()) / df["price"].std()
 
-        # Fill the missing values with the previous value
+        # Fill the missing values due to start of Daylight saving times with the previous value
         df.fillna(method="ffill", inplace=True)
 
         return df
-
-    @staticmethod
-    def create_template(
-        dataframe: pd.DataFrame,
-        column: str,
-        grouping_columns: List[str],
-        methods: List[str] = ["mean"],
-        change_col_names: bool = True,
-    ) -> pd.DataFrame:
-        """Create template Data Frame.
-
-        Create template for a single column with methods over a group of columns.
-        A template is intended as the average/min/max/etc. behaviour of a variable
-        grouped by other columns of the dataframe (usually time), e.g. the mean value
-        of variable x on the different months of the year.
-
-        Args:
-            dataframe (pd.DataFrame): input dataframe
-            column (str): name of column of which create template.
-            grouping_columns (List[str]):
-                columns to be used to create the grouping of the template.
-            methods (List[str]):
-                method to be used to evaluate the template. Defaults to "mean".
-                Options: methods in Computations/Descriptive statistics in
-                https://pandas.pydata.org/docs/reference/groupby.html passed as
-                strings
-            change_col_names (bool, optional):
-                if True, change template column name according to method used.
-                Defaults to True.
-
-        Returns:
-            pd.DataFrame: Data Frame with template.
-        """
-        df_group = dataframe.groupby(grouping_columns)
-        templates_dict = {}
-        for met in methods:
-            df_group_m = eval(f"df_group.{met}(numeric_only=True)[column]")
-
-            name = f"{column}_tpl_{met}" if change_col_names else column
-            templates_dict[name] = df_group_m
-
-        df_group = pd.DataFrame(templates_dict)
-
-        if len(grouping_columns) > 1:
-            levels = []
-            index_name = ""
-            for ic, col in enumerate(grouping_columns):
-                levels += [ic]
-                index_name += (
-                    "{0[" + col + "]:.0f}" if ic == 0 else "-{0[" + col + "]:.0f}"
-                )
-            df_group.reset_index(level=levels, inplace=True)
-            df_group["group_index"] = df_group.agg(index_name.format, axis=1)
-            df_group.set_index("group_index", drop=True, inplace=True)
-        else:
-            df_group.index.rename("group_index", inplace=True)
-            df_group[grouping_columns[0]] = df_group.index
-
-        return df_group
