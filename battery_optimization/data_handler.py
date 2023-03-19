@@ -62,7 +62,7 @@ class DataHandler(object):
             format="%d.%m.%Y %H:%M",
         )
         df["end_mtu"] = pd.to_datetime(
-            df["MTU (CET/CEST)"].apply(lambda x: x.split(" - ")[0].strip()),
+            df["MTU (CET/CEST)"].apply(lambda x: x.split(" - ")[1].strip()),
             format="%d.%m.%Y %H:%M",
         )
 
