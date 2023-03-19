@@ -19,6 +19,7 @@ jupyterlab = "^3.6.1"
 pyarrow = "^11.0.0"
 statsmodels = "^0.13.5"
 holidays = "^0.21.13"
+pyomo = "^6.5.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.1.0"
