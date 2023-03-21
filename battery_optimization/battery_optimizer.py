@@ -183,7 +183,7 @@ class PyoBatteryOptimizer(BaseBatteryOptimizer):
             # Costs of buying electricity
             cost = sum(self.prices[i] * model.Recharge[i] * self.dt for i in model.It)
 
-            # Penalty for discharging
+            # Fee for discharging
             fee_units = (model.Discharge[i] * self.dt / self.fee_unit for i in model.It)
             fee = sum(self.fee * pu for pu in fee_units)
 
