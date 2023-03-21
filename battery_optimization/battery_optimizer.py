@@ -1,5 +1,7 @@
+import logging
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
+from typing import Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -16,6 +18,10 @@ from pyomo.environ import (
     SolverFactory,
     Var,
     minimize,
+)
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S"
 )
 
 
@@ -53,11 +59,11 @@ class BaseBatteryOptimizer(object, metaclass=ABCMeta):
         self.dt = dt
 
     @abstractmethod
-    def _prepare_problem(self):
+    def _prepare_problem(self) -> None:
         pass
 
     @abstractmethod
-    def optimize(self):
+    def optimize(self) -> Tuple[float, pd.DataFrame]:
         pass
 
 
@@ -98,7 +104,7 @@ class BatteryOptimizer(BaseBatteryOptimizer):
             optimize.OptimizeResult: result of the optimization.
         """
         self._prepare_problem()
-        return optimize.linprog(
+        self._opt = optimize.linprog(
             self._cdt,
             self._A_ineq,
             self._b_ineq,
@@ -106,6 +112,19 @@ class BatteryOptimizer(BaseBatteryOptimizer):
             self._b_eq,
             self._b_bounds,
         )
+        if self._opt.success:
+            logging.info(f"Optimization successful: {self._opt.message}")
+            df = pd.DataFrame(
+                {
+                    "power": self._opt.x,
+                    "capacity": np.append(0.0, np.cumsum(self._opt.x * self.dt))[:-1],
+                },
+                index=np.arange(len(self.prices)),
+            )
+            return (self._opt.fun, df)
+        else:
+            logging.info(f"Optimization NOT successful: {self._opt.message}")
+            return (0.0, pd.DataFrame({}))
 
 
 class PyoBatteryOptimizer(BaseBatteryOptimizer):
@@ -119,19 +138,22 @@ class PyoBatteryOptimizer(BaseBatteryOptimizer):
         battery: Battery,
         prices: npt.NDArray[np.float64],
         dt: float = 1.0,
-        penalty: float = 0.0,
+        fee: float = 0.0,
+        fee_unit: float = 1.0,
     ):
         """
         __init__ initializes the battery optimizer.
 
         Args:
             battery (Battery): battery object.
-            prices (npt.NDArray[np.float64]): Array of electricity prices.
+            prices (npt.NDArray[np.float64]): Array of electricity prices (Euro/MWh).
             dt (float, optional): Time unit in hours. Defaults to 1.0.
-            penalty (float, optional): Penalty in Euros for discharging the power constraints. Defaults to 0.0.
+            fee (float, optional): Fee in Euros for discharging the power constraints. Defaults to 0.0.
+            fee_unit (float, optional): Unit of the discharge fee in MWh. Defaults to 1.0.
         """
         super().__init__(battery, prices, dt)
-        self.penalty = penalty
+        self.fee = fee
+        self.fee_unit = fee_unit
 
     def _prepare_problem(self):
         """
@@ -155,10 +177,17 @@ class PyoBatteryOptimizer(BaseBatteryOptimizer):
 
         # Defining the battery objective (function to be minimised)
         def maximise_profit(model):
+            # Revenues from selling electricity
             rev = sum(self.prices[i] * model.Discharge[i] * self.dt for i in model.It)
-            penalty = sum(self.penalty * model.Discharge[i] * self.dt for i in model.It)
+
+            # Costs of buying electricity
             cost = sum(self.prices[i] * model.Recharge[i] * self.dt for i in model.It)
-            return cost + penalty - rev
+
+            # Penalty for discharging
+            fee_units = (model.Discharge[i] * self.dt / self.fee_unit for i in model.It)
+            fee = sum(self.fee * pu for pu in fee_units)
+
+            return cost + fee - rev
 
         # Constraint (2)
         def constraint_recharge(model, i):
@@ -191,6 +220,7 @@ class PyoBatteryOptimizer(BaseBatteryOptimizer):
         self._model.constraint_discharge = Constraint(
             self._model.It, rule=constraint_discharge
         )
+
         self._model.objective = Objective(rule=maximise_profit, sense=minimize)
 
     def _get_results(self) -> pd.DataFrame:
@@ -211,7 +241,7 @@ class PyoBatteryOptimizer(BaseBatteryOptimizer):
         df["power"] = df["recharge"] - df["discharge"]
         return df
 
-    def optimize(self):
+    def optimize(self) -> Tuple[float, pd.DataFrame]:
         """
         optimize optimizes the battery problem using Pyomo.
 
@@ -219,5 +249,17 @@ class PyoBatteryOptimizer(BaseBatteryOptimizer):
             model: Pyomo model.
         """
         self._prepare_problem()
-        self._opt.solve(self._model, tee=False)
-        return self._get_results()
+        res = self._opt.solve(self._model)
+        if res.solver.status.value == "ok":
+            logging.info(
+                f"Optimization successful: {res.solver.termination_condition.value}"
+            )
+            return (
+                self._model.objective(),
+                self._get_results(),
+            )
+        else:
+            logging.info(
+                f"Optimization NOT successful: {res.solver.termination_condition.value}"
+            )
+            return (0.0, pd.DataFrame({}))
